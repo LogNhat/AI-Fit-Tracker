@@ -1,0 +1,12 @@
+{
+  "name": "ai-fit-tracker-backend",
+  "version": "1.0.0",
+  "description": "Backend server for AI Fit Tracker real-time synchronization",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
