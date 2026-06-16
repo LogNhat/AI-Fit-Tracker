@@ -3,9 +3,73 @@ package com.example.aifittracker.analysis
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
 
-class SquatAnalyzer : ExerciseAnalyzer {
-    private var squatState = SquatState.STANDING
-    private var squatReachedBottom = false
+class SquatAnalyzer(
+    private val onRepDetected: (() -> Unit)? = null,
+    private val onStateChanged: ((SquatState) -> Unit)? = null,
+    private val onFeedbackChanged: ((String) -> Unit)? = null
+) : ExerciseAnalyzer {
+    var squatState = SquatState.STANDING
+        private set
+    var squatReachedBottom = false
+        private set
+
+    fun processKneeAngle(kneeAngle: Double) {
+        processKneeAngle(
+            kneeAngle = kneeAngle,
+            onFeedback = { onFeedbackChanged?.invoke(it) },
+            onState = { state -> onStateChanged?.invoke(SquatState.valueOf(state)) },
+            onRep = { onRepDetected?.invoke() }
+        )
+    }
+
+    private fun processKneeAngle(
+        kneeAngle: Double,
+        onFeedback: (String) -> Unit,
+        onState: (String) -> Unit,
+        onRep: () -> Unit
+    ) {
+        when (squatState) {
+            SquatState.STANDING -> {
+                if (kneeAngle < 160) {
+                    squatState = SquatState.DESCENDING
+                    onState(squatState.name)
+                    onFeedback("Going down...")
+                }
+            }
+            SquatState.DESCENDING -> {
+                if (kneeAngle < 95) {
+                    squatState = SquatState.BOTTOM
+                    squatReachedBottom = true
+                    onState(squatState.name)
+                    onFeedback("Nice depth!")
+                } else if (kneeAngle > 165) {
+                    squatState = SquatState.STANDING
+                    onState(squatState.name)
+                    onFeedback("Too shallow! Go deeper.")
+                }
+            }
+            SquatState.BOTTOM -> {
+                if (kneeAngle > 105) {
+                    squatState = SquatState.ASCENDING
+                    onState(squatState.name)
+                    onFeedback("Push up!")
+                }
+            }
+            SquatState.ASCENDING -> {
+                if (kneeAngle > 160) {
+                    if (squatReachedBottom) {
+                        onRep()
+                        onFeedback("Good rep!")
+                    } else {
+                        onFeedback("Go deeper next time!")
+                    }
+                    squatState = SquatState.STANDING
+                    squatReachedBottom = false
+                    onState(squatState.name)
+                }
+            }
+        }
+    }
 
     override fun analyze(
         pose: Pose,
@@ -53,47 +117,7 @@ class SquatAnalyzer : ExerciseAnalyzer {
                 )
             }
 
-            when (squatState) {
-                SquatState.STANDING -> {
-                    if (kneeAngle < 160) {
-                        squatState = SquatState.DESCENDING
-                        onState(squatState.name)
-                        onFeedback("Going down...")
-                    }
-                }
-                SquatState.DESCENDING -> {
-                    if (kneeAngle < 95) {
-                        squatState = SquatState.BOTTOM
-                        squatReachedBottom = true
-                        onState(squatState.name)
-                        onFeedback("Nice depth!")
-                    } else if (kneeAngle > 165) {
-                        squatState = SquatState.STANDING
-                        onState(squatState.name)
-                        onFeedback("Too shallow! Go deeper.")
-                    }
-                }
-                SquatState.BOTTOM -> {
-                    if (kneeAngle > 105) {
-                        squatState = SquatState.ASCENDING
-                        onState(squatState.name)
-                        onFeedback("Push up!")
-                    }
-                }
-                SquatState.ASCENDING -> {
-                    if (kneeAngle > 160) {
-                        if (squatReachedBottom) {
-                            onRep()
-                            onFeedback("Good rep!")
-                        } else {
-                            onFeedback("Go deeper next time!")
-                        }
-                        squatState = SquatState.STANDING
-                        squatReachedBottom = false
-                        onState(squatState.name)
-                    }
-                }
-            }
+            processKneeAngle(kneeAngle, onFeedback, onState, onRep)
         } else {
             onActiveLeg("None")
             if (squatState != SquatState.STANDING) {
@@ -106,7 +130,11 @@ class SquatAnalyzer : ExerciseAnalyzer {
     }
 
     override fun reset() {
-        squatState = SquatState.STANDING
-        squatReachedBottom = false
+        if (squatState != SquatState.STANDING) {
+            squatState = SquatState.STANDING
+            squatReachedBottom = false
+            onStateChanged?.invoke(squatState)
+            onFeedbackChanged?.invoke("Ready")
+        }
     }
 }
