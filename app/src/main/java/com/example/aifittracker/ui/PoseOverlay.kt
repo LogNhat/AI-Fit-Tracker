@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -28,6 +29,17 @@ fun PoseOverlay(
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val errorColor = MaterialTheme.colorScheme.error
 
+    // Cache/remember paint and stroke objects to avoid allocation on every draw call
+    val textPaint = remember {
+        android.graphics.Paint().apply {
+            textSize = 30f
+            typeface = android.graphics.Typeface.MONOSPACE
+            isFakeBoldText = true
+        }
+    }
+    val stroke5 = remember { Stroke(width = 5f) }
+    val stroke5Round = remember { Stroke(width = 5f, cap = StrokeCap.Round) }
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         if (pose == null || imageWidth <= 0 || imageHeight <= 0) return@Canvas
 
@@ -51,21 +63,22 @@ fun PoseOverlay(
         val offsetX = (canvasWidth - scaledWidth) / 2f
         val offsetY = (canvasHeight - scaledHeight) / 2f
 
-        fun PoseLandmark.toOffset(): Offset {
-            val adjustedX = if (isFrontCamera) imageWidth - position.x else position.x
-            return Offset(adjustedX * scale + offsetX, position.y * scale + offsetY)
+        // Precompute scaled coordinate offsets for all 33 landmark points
+        // to avoid redundant calculations inside drawing loops.
+        val landmarkOffsets = Array<Offset?>(33) { null }
+        for (landmark in landmarks) {
+            val type = landmark.landmarkType
+            if (type in 0..32 && landmark.inFrameLikelihood > 0.5f) {
+                val adjustedX = if (isFrontCamera) imageWidth - landmark.position.x else landmark.position.x
+                landmarkOffsets[type] = Offset(adjustedX * scale + offsetX, landmark.position.y * scale + offsetY)
+            }
         }
 
         // Draw connections with double-draw neon glowing effect
         fun drawLineBetween(start: Int, end: Int) {
-            val startLandmark = pose.getPoseLandmark(start)
-            val endLandmark = pose.getPoseLandmark(end)
-            if (startLandmark != null && endLandmark != null &&
-                startLandmark.inFrameLikelihood > 0.5f && endLandmark.inFrameLikelihood > 0.5f) {
-                
-                val startOffset = startLandmark.toOffset()
-                val endOffset = endLandmark.toOffset()
-
+            val startOffset = landmarkOffsets.getOrNull(start)
+            val endOffset = landmarkOffsets.getOrNull(end)
+            if (startOffset != null && endOffset != null) {
                 // 1. Thick neon colored background line (outer glow)
                 drawLine(
                     color = color.copy(alpha = 0.25f),
@@ -95,50 +108,49 @@ fun PoseOverlay(
             val middle = pose.getPoseLandmark(middleJoint)
             val last = pose.getPoseLandmark(lastJoint)
             
-            if (first != null && middle != null && last != null &&
-                first.inFrameLikelihood > 0.5f && middle.inFrameLikelihood > 0.5f && last.inFrameLikelihood > 0.5f) {
-                
-                val angle = com.example.aifittracker.analysis.PoseUtils.calculateAngle(
-                    first.position.x, first.position.y,
-                    middle.position.x, middle.position.y,
-                    last.position.x, last.position.y
-                )
-                
-                val center = middle.toOffset()
-                
-                // Draw a nice glowing circle ring around the joint
-                drawCircle(
-                    color = color.copy(alpha = 0.2f),
-                    radius = 35f,
-                    center = center,
-                    style = Stroke(width = 5f)
-                )
-                
-                // Draw active part of the ring
-                val sweepAngle = (angle.toFloat() / 180f) * 360f
-                drawArc(
-                    color = color,
-                    startAngle = -90f,
-                    sweepAngle = sweepAngle,
-                    useCenter = false,
-                    topLeft = Offset(center.x - 35f, center.y - 35f),
-                    size = androidx.compose.ui.geometry.Size(70f, 70f),
-                    style = Stroke(width = 5f, cap = StrokeCap.Round)
-                )
-                
-                // Draw the angle text using Android native canvas for rich drop-shadow and glow
-                drawContext.canvas.nativeCanvas.drawText(
-                    "${angle.toInt()}°",
-                    center.x + 40f,
-                    center.y + 10f,
-                    android.graphics.Paint().apply {
-                        this.color = color.toArgb()
-                        this.textSize = 30f
-                        this.typeface = android.graphics.Typeface.MONOSPACE
-                        this.isFakeBoldText = true
-                        this.setShadowLayer(8f, 0f, 0f, color.toArgb())
-                    }
-                )
+            val center = landmarkOffsets.getOrNull(middleJoint)
+            if (first != null && middle != null && last != null && center != null) {
+                val firstOffset = landmarkOffsets.getOrNull(firstJoint)
+                val lastOffset = landmarkOffsets.getOrNull(lastJoint)
+                if (firstOffset != null && lastOffset != null) {
+                    val angle = com.example.aifittracker.analysis.PoseUtils.calculateAngle(
+                        first.position.x, first.position.y,
+                        middle.position.x, middle.position.y,
+                        last.position.x, last.position.y
+                    )
+                    
+                    // Draw a nice glowing circle ring around the joint
+                    drawCircle(
+                        color = color.copy(alpha = 0.2f),
+                        radius = 35f,
+                        center = center,
+                        style = stroke5
+                    )
+                    
+                    // Draw active part of the ring
+                    val sweepAngle = (angle.toFloat() / 180f) * 360f
+                    drawArc(
+                        color = color,
+                        startAngle = -90f,
+                        sweepAngle = sweepAngle,
+                        useCenter = false,
+                        topLeft = Offset(center.x - 35f, center.y - 35f),
+                        size = androidx.compose.ui.geometry.Size(70f, 70f),
+                        style = stroke5Round
+                    )
+                    
+                    // Draw the angle text using Android native canvas for rich drop-shadow and glow
+                    val colorArgb = color.toArgb()
+                    textPaint.color = colorArgb
+                    textPaint.setShadowLayer(8f, 0f, 0f, colorArgb)
+
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "${angle.toInt()}°",
+                        center.x + 40f,
+                        center.y + 10f,
+                        textPaint
+                    )
+                }
             }
         }
 
@@ -171,21 +183,24 @@ fun PoseOverlay(
         drawAngleAtJoint(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST)
 
         // Draw joints dot tracker
-        landmarks.forEach { landmark ->
-            if (landmark.inFrameLikelihood > 0.5f) {
-                val offset = landmark.toOffset()
-                // Outer glowing circle
-                drawCircle(
-                    color = Color.White,
-                    radius = 8f,
-                    center = offset
-                )
-                // Inner colored core
-                drawCircle(
-                    color = color,
-                    radius = 4f,
-                    center = offset
-                )
+        for (landmark in landmarks) {
+            val type = landmark.landmarkType
+            if (type in 0..32) {
+                val offset = landmarkOffsets[type]
+                if (offset != null) {
+                    // Outer glowing circle
+                    drawCircle(
+                        color = Color.White,
+                        radius = 8f,
+                        center = offset
+                    )
+                    // Inner colored core
+                    drawCircle(
+                        color = color,
+                        radius = 4f,
+                        center = offset
+                    )
+                }
             }
         }
     }
