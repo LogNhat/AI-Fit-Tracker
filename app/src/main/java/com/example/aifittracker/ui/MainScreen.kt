@@ -928,12 +928,13 @@ fun MainScreen(
                 ) {
                     IconButton(
                         onClick = {
-                            if (repCount > 0 || plankDuration > 0) {
+                            val currentExercise = selectedExercise
+                            if (currentExercise != null && (repCount > 0 || plankDuration > 0)) {
                                 coroutineScope.launch {
                                     fitDao.insertWorkoutLog(
                                         WorkoutLog(
                                             userId = currentUser?.id ?: 0,
-                                            exerciseType = selectedExercise!!.displayName,
+                                            exerciseType = currentExercise.displayName,
                                             reps = repCount,
                                             duration = plankDuration
                                         )
