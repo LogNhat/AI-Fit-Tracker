@@ -4,6 +4,14 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -37,17 +45,30 @@ object SocketManager {
     
     private val client = OkHttpClient()
     private var webSocket: WebSocket? = null
-    var isConnected = false
-        private set
+    
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    private val _connectionState = MutableStateFlow(false)
+    val connectionState = _connectionState.asStateFlow()
+
+    val isConnected: Boolean
+        get() = _connectionState.value
+    
+    private val _roomUpdates = MutableSharedFlow<String>(replay = 0)
+    val roomUpdates = _roomUpdates.asSharedFlow()
+
+    data class ChatMessageEvent(val sender: String, val messageText: String, val timestamp: Long)
+
+    private val _chatReceive = MutableSharedFlow<ChatMessageEvent>(replay = 0)
+    val chatReceive = _chatReceive.asSharedFlow()
+
+    private val _leaderboardData = MutableSharedFlow<String>(replay = 0)
+    val leaderboardData = _leaderboardData.asSharedFlow()
+
+    private val _roomsList = MutableSharedFlow<String>(replay = 0)
+    val roomsList = _roomsList.asSharedFlow()
     
     private var isReconnecting = false
-    
-    // Callbacks
-    var onConnectionStateChanged: ((Boolean) -> Unit)? = null
-    var onRoomUpdateListener: ((String) -> Unit)? = null // JSON string of users list
-    var onChatReceiveListener: ((String, String, Long) -> Unit)? = null // sender, text, timestamp
-    var onLeaderboardDataListener: ((String) -> Unit)? = null // JSON array of leaderboard users
-    var onRoomsListListener: ((String) -> Unit)? = null // JSON array of rooms list
     
     fun connect() {
         if (isConnected) return
@@ -69,10 +90,7 @@ object SocketManager {
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket connected successfully.")
-                isConnected = true
-                mainHandler.post {
-                    onConnectionStateChanged?.invoke(true)
-                }
+                _connectionState.value = true
                 
                 // Fetch leaderboard right after connection
                 getLeaderboard()
@@ -85,28 +103,28 @@ object SocketManager {
                     when (json.optString("type")) {
                         "room_update" -> {
                             val usersArray = json.optJSONArray("users")?.toString() ?: "[]"
-                            mainHandler.post {
-                                onRoomUpdateListener?.invoke(usersArray)
+                            scope.launch {
+                                _roomUpdates.emit(usersArray)
                             }
                         }
                         "chat_receive" -> {
                             val sender = json.optString("sender")
                             val messageText = json.optString("messageText")
                             val timestamp = json.optLong("timestamp")
-                            mainHandler.post {
-                                onChatReceiveListener?.invoke(sender, messageText, timestamp)
+                            scope.launch {
+                                _chatReceive.emit(ChatMessageEvent(sender, messageText, timestamp))
                             }
                         }
                         "leaderboard_data" -> {
                             val dataArray = json.optJSONArray("data")?.toString() ?: "[]"
-                            mainHandler.post {
-                                onLeaderboardDataListener?.invoke(dataArray)
+                            scope.launch {
+                                _leaderboardData.emit(dataArray)
                             }
                         }
                         "rooms_list" -> {
                             val dataArray = json.optJSONArray("data")?.toString() ?: "[]"
-                            mainHandler.post {
-                                onRoomsListListener?.invoke(dataArray)
+                            scope.launch {
+                                _roomsList.emit(dataArray)
                             }
                         }
                     }
@@ -117,26 +135,17 @@ object SocketManager {
             
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closing: $code / $reason")
-                isConnected = false
-                mainHandler.post {
-                    onConnectionStateChanged?.invoke(false)
-                }
+                _connectionState.value = false
             }
             
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed.")
-                isConnected = false
-                mainHandler.post {
-                    onConnectionStateChanged?.invoke(false)
-                }
+                _connectionState.value = false
             }
             
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}", t)
-                isConnected = false
-                mainHandler.post {
-                    onConnectionStateChanged?.invoke(false)
-                }
+                _connectionState.value = false
                 
                 // Auto reconnect after 5s
                 if (!isReconnecting) {
@@ -160,7 +169,7 @@ object SocketManager {
     
     fun disconnect() {
         webSocket?.close(1000, "Goodbye")
-        isConnected = false
+        _connectionState.value = false
     }
     
     fun joinRoom(roomId: String, username: String) {
