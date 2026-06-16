@@ -49,18 +49,16 @@ fun FitStoreScreen(
     onCoinsDeducted: (Int) -> Unit,
     fitDao: FitDao
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var storeMode by remember { mutableStateOf("Shop") } // "Shop" or "Vouchers"
     var selectedCategory by remember { mutableStateOf("All") }
     var showSuccessDialog by remember { mutableStateOf<StoreProduct?>(null) }
     var showErrorDialog by remember { mutableStateOf<StoreProduct?>(null) }
     var selectedProductForDetail by remember { mutableStateOf<StoreProduct?>(null) }
     
-    var purchasedVouchers by remember { mutableStateOf(listOf<UserVoucher>()) }
+    val vouchersFlow = remember(userId) { fitDao.getAllVouchers(userId) }
+    val purchasedVouchers by vouchersFlow.collectAsState(initial = emptyList())
     var selectedVoucherForDialog by remember { mutableStateOf<UserVoucher?>(null) }
-
-    LaunchedEffect(storeMode, showSuccessDialog) {
-        purchasedVouchers = fitDao.getAllVouchers(userId)
-    }
 
     val mockProducts = remember {
         listOf(
@@ -399,15 +397,17 @@ fun FitStoreScreen(
                                         if (fitCoinBalance >= product.priceCoins) {
                                             onCoinsDeducted(product.priceCoins)
                                             // Lưu vào cơ sở dữ liệu Room
-                                            fitDao.insertVoucher(
-                                                UserVoucher(
-                                                    userId = userId,
-                                                    title = product.name,
-                                                    category = product.category,
-                                                    code = "FIT-" + UUID.randomUUID().toString().take(8).uppercase()
+                                            coroutineScope.launch {
+                                                fitDao.insertVoucher(
+                                                    UserVoucher(
+                                                        userId = userId,
+                                                        title = product.name,
+                                                        category = product.category,
+                                                        code = "FIT-" + UUID.randomUUID().toString().take(8).uppercase()
+                                                    )
                                                 )
-                                            )
-                                            showSuccessDialog = product
+                                                showSuccessDialog = product
+                                            }
                                         } else {
                                             showErrorDialog = product
                                         }
@@ -874,7 +874,6 @@ fun FitStoreScreen(
     if (selectedProductForDetail != null) {
         val product = selectedProductForDetail!!
         var isProcessing by remember { mutableStateOf(false) }
-        val coroutineScope = rememberCoroutineScope()
         
         AlertDialog(
             onDismissRequest = { if (!isProcessing) selectedProductForDetail = null },

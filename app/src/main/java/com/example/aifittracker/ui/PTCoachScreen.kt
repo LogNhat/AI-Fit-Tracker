@@ -30,6 +30,7 @@ import com.example.aifittracker.db.UserAccount
 import com.example.aifittracker.ui.theme.cyberpunkNeonBorder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 
@@ -41,14 +42,15 @@ fun PTCoachScreen(
     onStartWorkout: (ExerciseType) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val chatMessages = remember { mutableStateListOf<UserChatMessage>() }
+    val chatMessagesFlow = remember(currentUser.id) { fitDao.getAllChatMessages(currentUser.id) }
+    val chatMessages by chatMessagesFlow.collectAsState(initial = emptyList())
     var typedText by remember { mutableStateOf("") }
     var isAiTyping by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("📊 THỂ TRẠNG") }
 
     // Load Chat History from Room DB
-    LaunchedEffect(Unit) {
-        val loaded = fitDao.getAllChatMessages(currentUser.id)
+    LaunchedEffect(currentUser.id) {
+        val loaded = fitDao.getAllChatMessages(currentUser.id).first()
         if (loaded.isEmpty()) {
             val welcome = UserChatMessage(
                 userId = currentUser.id,
@@ -57,9 +59,6 @@ fun PTCoachScreen(
                 isCoach = true
             )
             fitDao.insertChatMessage(welcome)
-            chatMessages.add(welcome)
-        } else {
-            chatMessages.addAll(loaded)
         }
     }
 
@@ -344,31 +343,13 @@ fun PTCoachScreen(
                                     if (!isAiTyping) {
                                         isAiTyping = true
                                         val textToSend = text
-                                        
-                                        // 1. Save and add User message
-                                        val userMsg = UserChatMessage(
-                                            userId = currentUser.id,
-                                            senderName = "You",
-                                            messageText = textToSend,
-                                            isCoach = false
-                                        )
+                                        val userMsg = UserChatMessage(userId = currentUser.id, senderName = "You", messageText = textToSend, isCoach = false)
                                         coroutineScope.launch {
                                             fitDao.insertChatMessage(userMsg)
-                                            chatMessages.add(userMsg)
-                                            
-                                            // 2. Trigger AI response delay
                                             delay(1000)
-                                            
-                                            // 3. Generate, save and add AI response
                                             val aiResponseText = generateLocalAiResponse(textToSend, fitDao, currentUser)
-                                            val aiMsg = UserChatMessage(
-                                                userId = currentUser.id,
-                                                senderName = "FitAI Assistant",
-                                                messageText = aiResponseText,
-                                                isCoach = true
-                                            )
+                                            val aiMsg = UserChatMessage(userId = currentUser.id, senderName = "FitAI Assistant", messageText = aiResponseText, isCoach = true)
                                             fitDao.insertChatMessage(aiMsg)
-                                            chatMessages.add(aiMsg)
                                             isAiTyping = false
                                         }
                                     }
@@ -425,7 +406,6 @@ fun PTCoachScreen(
                                 )
                                 coroutineScope.launch {
                                     fitDao.insertChatMessage(userMsg)
-                                    chatMessages.add(userMsg)
                                     
                                     // 2. Trigger AI response delay
                                     delay(1000)
@@ -439,7 +419,6 @@ fun PTCoachScreen(
                                         isCoach = true
                                     )
                                     fitDao.insertChatMessage(aiMsg)
-                                    chatMessages.add(aiMsg)
                                     isAiTyping = false
                                 }
                             }
@@ -463,9 +442,9 @@ fun PTCoachScreen(
 }
 
 // Local Smart AI Response Generator based on database context and input keywords
-private fun generateLocalAiResponse(userInput: String, fitDao: FitDao, currentUser: UserAccount): String {
+private suspend fun generateLocalAiResponse(userInput: String, fitDao: FitDao, currentUser: UserAccount): String {
     val cleanInput = userInput.lowercase()
-    val latestWorkout = fitDao.getAllWorkoutLogs(currentUser.id).firstOrNull()
+    val latestWorkout = fitDao.getAllWorkoutLogs(currentUser.id).first().firstOrNull()
     
     val dateStr = latestWorkout?.let {
         java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.timestamp))

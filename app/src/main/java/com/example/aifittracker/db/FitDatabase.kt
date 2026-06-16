@@ -32,7 +32,6 @@ abstract class FitDatabase : RoomDatabase() {
                     }
                 })
                 .fallbackToDestructiveMigration()
-                .allowMainThreadQueries() // Maintain compatibility with synchronous state initialization in UI
                 .build()
                 INSTANCE = instance
                 instance

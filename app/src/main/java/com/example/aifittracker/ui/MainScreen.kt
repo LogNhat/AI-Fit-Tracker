@@ -85,6 +85,7 @@ fun MainScreen(
     onThemeChanged: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val particles = remember { mutableStateListOf<HUDParticle>() }
     var particleTrigger by remember { mutableStateOf(0) }
 
@@ -141,14 +142,16 @@ fun MainScreen(
     var fitCoinBalance by remember { mutableStateOf(150) }
     var workoutLogsCount by remember { mutableStateOf(0) }
     var showHistoryDialog by remember { mutableStateOf(false) }
-    var workoutLogs by remember { mutableStateOf(listOf<WorkoutLog>()) }
+    val workoutLogsFlow = remember(currentUser) {
+        currentUser?.let { fitDao.getAllWorkoutLogs(it.id) }
+    }
+    val workoutLogs by (workoutLogsFlow ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
     var activeWorkoutSubTab by remember { mutableStateOf(0) } // 0 = Exercises, 1 = Analytics
 
     LaunchedEffect(currentUser, workoutLogsCount) {
         currentUser?.let { user ->
             fitCoinBalance = fitDao.getCoinBalance(user.id) ?: 150
             workoutLogsCount = fitDao.getWorkoutLogsCount(user.id)
-            workoutLogs = fitDao.getAllWorkoutLogs(user.id)
         }
     }
 
@@ -326,15 +329,17 @@ fun MainScreen(
                     val room = activeRoom
                     if (room != null) {
                         val isPlank = room.exerciseType == ExerciseType.PLANK
-                        fitDao.insertWorkoutLog(
-                            WorkoutLog(
-                                userId = currentUser?.id ?: 0,
-                                exerciseType = "${room.exerciseType.displayName} (Multiplayer)",
-                                reps = if (isPlank) 0 else score,
-                                duration = if (isPlank) score else 0
+                        coroutineScope.launch {
+                            fitDao.insertWorkoutLog(
+                                WorkoutLog(
+                                    userId = currentUser?.id ?: 0,
+                                    exerciseType = "${room.exerciseType.displayName} (Multiplayer)",
+                                    reps = if (isPlank) 0 else score,
+                                    duration = if (isPlank) score else 0
+                                )
                             )
-                        )
-                        workoutLogsCount = fitDao.getWorkoutLogsCount(currentUser?.id ?: 0)
+                            workoutLogsCount = fitDao.getWorkoutLogsCount(currentUser?.id ?: 0)
+                        }
                     }
                 }
                 activeRoom = null
@@ -925,15 +930,17 @@ fun MainScreen(
                     IconButton(
                         onClick = {
                             if (repCount > 0 || plankDuration > 0) {
-                                fitDao.insertWorkoutLog(
-                                    WorkoutLog(
-                                        userId = currentUser?.id ?: 0,
-                                        exerciseType = selectedExercise!!.displayName,
-                                        reps = repCount,
-                                        duration = plankDuration
+                                coroutineScope.launch {
+                                    fitDao.insertWorkoutLog(
+                                        WorkoutLog(
+                                            userId = currentUser?.id ?: 0,
+                                            exerciseType = selectedExercise!!.displayName,
+                                            reps = repCount,
+                                            duration = plankDuration
+                                        )
                                     )
-                                )
-                                workoutLogsCount = fitDao.getWorkoutLogsCount(currentUser?.id ?: 0)
+                                    workoutLogsCount = fitDao.getWorkoutLogsCount(currentUser?.id ?: 0)
+                                }
                             }
                             selectedExercise = null
                         },

@@ -1,6 +1,7 @@
 package com.example.aifittracker.ui
 
 import android.widget.Toast
+import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ fun LoginScreen(
     onLoginSuccess: (UserAccount) -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var isRegister by remember { mutableStateOf(false) }
 
     // Common fields
@@ -321,40 +323,43 @@ fun LoginScreen(
                                         return@clickable
                                     }
 
-                                    // Check username exists
-                                    val existingUser = fitDao.getUserAccountByUsername(username.trim())
-                                    if (existingUser != null) {
-                                        errorMessage = "Username is already registered."
-                                        return@clickable
-                                    }
+                                    coroutineScope.launch {
+                                        // Check username exists
+                                        val existingUser = fitDao.getUserAccountByUsername(username.trim())
+                                        if (existingUser != null) {
+                                            errorMessage = "Username is already registered."
+                                        } else {
+                                            // Create user
+                                            val newUser = UserAccount(
+                                                username = username.trim(),
+                                                password = password,
+                                                name = name.trim(),
+                                                height = height,
+                                                weight = weight
+                                            )
+                                            val newId = fitDao.insertUserAccount(newUser)
+                                            // Initialize wallet
+                                            fitDao.updateCoinBalance(newId.toInt(), 150)
 
-                                    // Create user
-                                    val newUser = UserAccount(
-                                        username = username.trim(),
-                                        password = password,
-                                        name = name.trim(),
-                                        height = height,
-                                        weight = weight
-                                    )
-                                    val newId = fitDao.insertUserAccount(newUser)
-                                    // Initialize wallet
-                                    fitDao.updateCoinBalance(newId.toInt(), 150)
-
-                                    val savedUser = fitDao.getUserAccountById(newId.toInt())
-                                    if (savedUser != null) {
-                                        Toast.makeText(context, "Registration Successful!", Toast.LENGTH_SHORT).show()
-                                        onLoginSuccess(savedUser)
-                                    } else {
-                                        errorMessage = "Database insertion error."
+                                            val savedUser = fitDao.getUserAccountById(newId.toInt())
+                                            if (savedUser != null) {
+                                                Toast.makeText(context, "Registration Successful!", Toast.LENGTH_SHORT).show()
+                                                onLoginSuccess(savedUser)
+                                            } else {
+                                                errorMessage = "Database insertion error."
+                                            }
+                                        }
                                     }
                                 } else {
-                                    // Login
-                                    val user = fitDao.getUserAccountByUsername(username.trim())
-                                    if (user == null || user.password != password) {
-                                        errorMessage = "Invalid username or password."
-                                    } else {
-                                        Toast.makeText(context, "Access Granted. Welcome, ${user.name}!", Toast.LENGTH_SHORT).show()
-                                        onLoginSuccess(user)
+                                    coroutineScope.launch {
+                                        // Login
+                                        val user = fitDao.getUserAccountByUsername(username.trim())
+                                        if (user == null || user.password != password) {
+                                            errorMessage = "Invalid username or password."
+                                        } else {
+                                            Toast.makeText(context, "Access Granted. Welcome, ${user.name}!", Toast.LENGTH_SHORT).show()
+                                            onLoginSuccess(user)
+                                        }
                                     }
                                 }
                             },

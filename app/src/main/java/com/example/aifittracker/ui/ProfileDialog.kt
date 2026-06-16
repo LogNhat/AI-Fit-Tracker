@@ -1,6 +1,7 @@
 package com.example.aifittracker.ui
 
 import android.widget.Toast
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -45,6 +46,7 @@ fun ProfileDialog(
     onThemeChanged: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var heightStr by remember { mutableStateOf(user.height.toString()) }
     var weightStr by remember { mutableStateOf(user.weight.toString()) }
@@ -284,7 +286,9 @@ fun ProfileDialog(
                                 }
                                 // Update DB
                                 val updatedUser = user.copy(height = height, weight = weight)
-                                fitDao.updateUserAccount(updatedUser)
+                                coroutineScope.launch {
+                                    fitDao.updateUserAccount(updatedUser)
+                                }
                                 Toast.makeText(context, "Metrics Updated!", Toast.LENGTH_SHORT).show()
                                 onProfileUpdated(updatedUser)
                                 isEditing = false
