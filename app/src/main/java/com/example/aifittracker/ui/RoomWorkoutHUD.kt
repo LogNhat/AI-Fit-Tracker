@@ -51,6 +51,8 @@ fun RoomWorkoutHUD(
 
     // Participant state from WebSocket
     var roomUsers by remember { mutableStateOf(emptyList<Triple<String, Int, String>>()) }
+    var activeLeg by remember { mutableStateOf("None") }
+    val floatingStickers = remember { mutableStateListOf<Pair<String, Long>>() }
 
     // Simulated scores/states for fallback
     var minhScore by remember { mutableStateOf(0) }
