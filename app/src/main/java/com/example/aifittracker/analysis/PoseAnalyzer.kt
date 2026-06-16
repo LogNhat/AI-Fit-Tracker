@@ -27,8 +27,12 @@ class PoseAnalyzer(
     private val detector = PoseDetection.getClient(options)
     
     // Squat State
-    private var squatState = SquatState.STANDING
-    private var squatReachedBottom = false
+    private val squatAnalyzer = SquatAnalyzer(
+        onRepDetected = onRepDetected,
+        onStateChanged = { state -> onStateChanged(state.name) },
+        onFeedbackChanged = onFeedbackChanged
+    )
+
 
     // Push-up State
     private var pushUpState = PushUpState.UP
@@ -150,55 +154,10 @@ class PoseAnalyzer(
                 )
             }
 
-            when (squatState) {
-                SquatState.STANDING -> {
-                    if (kneeAngle < 160) {
-                        squatState = SquatState.DESCENDING
-                        onStateChanged(squatState.name)
-                        onFeedbackChanged("Going down...")
-                    }
-                }
-                SquatState.DESCENDING -> {
-                    if (kneeAngle < 95) {
-                        squatState = SquatState.BOTTOM
-                        squatReachedBottom = true
-                        onStateChanged(squatState.name)
-                        onFeedbackChanged("Nice depth!")
-                    } else if (kneeAngle > 165) {
-                        squatState = SquatState.STANDING
-                        onStateChanged(squatState.name)
-                        onFeedbackChanged("Too shallow! Go deeper.")
-                    }
-                }
-                SquatState.BOTTOM -> {
-                    if (kneeAngle > 105) {
-                        squatState = SquatState.ASCENDING
-                        onStateChanged(squatState.name)
-                        onFeedbackChanged("Push up!")
-                    }
-                }
-                SquatState.ASCENDING -> {
-                    if (kneeAngle > 160) {
-                        if (squatReachedBottom) {
-                            onRepDetected()
-                            onFeedbackChanged("Good rep!")
-                        } else {
-                            onFeedbackChanged("Go deeper next time!")
-                        }
-                        squatState = SquatState.STANDING
-                        squatReachedBottom = false
-                        onStateChanged(squatState.name)
-                    }
-                }
-            }
+            squatAnalyzer.processKneeAngle(kneeAngle)
         } else {
             onActiveLegChanged("None")
-            if (squatState != SquatState.STANDING) {
-                squatState = SquatState.STANDING
-                squatReachedBottom = false
-                onStateChanged(squatState.name)
-                onFeedbackChanged("Ready")
-            }
+            squatAnalyzer.reset()
         }
     }
 
