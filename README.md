@@ -26,3 +26,8 @@ This project is a Proof of Concept for real-time workout tracking.
 ## Troubleshooting
 - **Camera Permission:** If the camera doesn't start, ensure you've granted the camera permission when prompted.
 - **Performance:** If the overlay feels laggy, ensure your device isn't in power-saving mode. The app uses `STREAM_MODE` for the best real-time experience.
+# AI-Fit-Tracker
+# AI-Fit-Tracker
+# AI-Fit-Tracker
+# AI-Fit-Tracker
+# AI-Fit-Tracker

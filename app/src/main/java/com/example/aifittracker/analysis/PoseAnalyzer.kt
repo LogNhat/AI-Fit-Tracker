@@ -52,8 +52,15 @@ class PoseAnalyzer(
         return visibleCount >= 2
     }
 
+    private var isClosed = false
+
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
+        if (isClosed) {
+            imageProxy.close()
+            return
+        }
+
         val currentTime = System.currentTimeMillis()
         val timeSinceLastValidPose = currentTime - lastValidPoseTimestamp
 
@@ -76,29 +83,43 @@ class PoseAnalyzer(
             val height = if (isRotated) imageProxy.width else imageProxy.height
 
             val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
-            detector.process(image)
-                .addOnSuccessListener { pose ->
-                    if (checkPoseVisibility(pose)) {
-                        lastValidPoseTimestamp = System.currentTimeMillis()
+            if (isClosed) {
+                imageProxy.close()
+                return
+            }
+            try {
+                detector.process(image)
+                    .addOnSuccessListener { pose ->
+                        if (isClosed) return@addOnSuccessListener
+                        if (checkPoseVisibility(pose)) {
+                            lastValidPoseTimestamp = System.currentTimeMillis()
+                        }
+                        onPoseDetected(pose, width, height)
+                        activeAnalyzer.analyze(
+                            pose = pose,
+                            onFeedback = onFeedbackChanged,
+                            onState = onStateChanged,
+                            onRep = onRepDetected,
+                            onActiveLeg = onActiveLegChanged
+                        )
                     }
-                    onPoseDetected(pose, width, height)
-                    activeAnalyzer.analyze(
-                        pose = pose,
-                        onFeedback = onFeedbackChanged,
-                        onState = onStateChanged,
-                        onRep = onRepDetected,
-                        onActiveLeg = onActiveLegChanged
-                    )
-                }
-                .addOnCompleteListener {
-                    imageProxy.close()
-                }
+                    .addOnCompleteListener {
+                        imageProxy.close()
+                    }
+            } catch (e: Exception) {
+                imageProxy.close()
+            }
         } else {
             imageProxy.close()
         }
     }
 
     fun close() {
-        detector.close()
+        isClosed = true
+        try {
+            detector.close()
+        } catch (e: Exception) {
+            // ignore
+        }
     }
 }

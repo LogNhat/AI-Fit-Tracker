@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -31,6 +32,7 @@ fun CameraPreview(
     onActiveLegChanged: (String) -> Unit
 ) {
     key(exerciseType, isFrontCamera) {
+        val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
         val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
         val analyzer = remember(exerciseType) {
@@ -43,15 +45,20 @@ fun CameraPreview(
                 onActiveLegChanged = onActiveLegChanged
             )
         }
+        val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+        val isDisposed = remember { mutableStateOf(false) }
 
-        DisposableEffect(analyzer) {
+        DisposableEffect(analyzer, cameraExecutor, cameraProviderFuture) {
             onDispose {
+                isDisposed.value = true
+                try {
+                    if (cameraProviderFuture.isDone) {
+                        cameraProviderFuture.get().unbindAll()
+                    }
+                } catch (exc: Exception) {
+                    // ignore
+                }
                 analyzer.close()
-            }
-        }
-
-        DisposableEffect(cameraExecutor) {
-            onDispose {
                 cameraExecutor.shutdown()
             }
         }
@@ -61,30 +68,31 @@ fun CameraPreview(
                 val previewView = PreviewView(ctx).apply {
                     keepScreenOn = true
                 }
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
 
                 cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
+                    if (isDisposed.value) return@addListener
+                    
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
 
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setTargetResolution(Size(1280, 720))
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also {
-                            it.setAnalyzer(cameraExecutor, analyzer)
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
                         }
 
-                    val cameraSelector = if (isFrontCamera) {
-                        CameraSelector.DEFAULT_FRONT_CAMERA
-                    } else {
-                        CameraSelector.DEFAULT_BACK_CAMERA
-                    }
+                        val imageAnalysis = ImageAnalysis.Builder()
+                            .setTargetResolution(Size(1280, 720))
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                            .also {
+                                it.setAnalyzer(cameraExecutor, analyzer)
+                            }
 
-                    try {
+                        val cameraSelector = if (isFrontCamera) {
+                            CameraSelector.DEFAULT_FRONT_CAMERA
+                        } else {
+                            CameraSelector.DEFAULT_BACK_CAMERA
+                        }
+
                         cameraProvider.unbindAll()
                         cameraProvider.bindToLifecycle(
                             lifecycleOwner,
