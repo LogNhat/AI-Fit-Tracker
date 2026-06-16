@@ -29,6 +29,7 @@ import com.example.aifittracker.model.WorkoutRoom
 import com.example.aifittracker.net.SocketManager
 import com.example.aifittracker.ui.theme.cyberpunkNeonBorder
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -44,47 +45,33 @@ fun RoomWorkoutHUD(
     var myReps by remember { mutableStateOf(0) }
     var plankDuration by remember { mutableStateOf(0) }
     var squatStateStr by remember { mutableStateOf("STANDING") }
-    var feedbackMessage by remember { mutableStateOf("Ready") }
-    var activeLeg by remember { mutableStateOf("None") }
-
-    var minhScore by remember { mutableStateOf(12) }
-    var thanhScore by remember { mutableStateOf(9) }
-    
-    // Real-time room participants
-    var roomUsers by remember { mutableStateOf<List<Triple<String, Int, String>>>(emptyList()) }
-
-    // Control States
-    var isMuted by remember { mutableStateOf(false) }
+    var feedbackMessage by remember { mutableStateOf("Get Ready") }
     var useFrontCamera by remember { mutableStateOf(true) }
+    var isMuted by remember { mutableStateOf(false) }
 
-    // Floating Stickers
-    val floatingStickers = remember { mutableStateListOf<Pair<String, Long>>() }
+    // Participant state from WebSocket
+    var roomUsers by remember { mutableStateOf(emptyList<Triple<String, Int, String>>()) }
 
-    // Simulate Minh & Thanh workouts
-    LaunchedEffect(room.exerciseType) {
+    // Simulated scores/states for fallback
+    var minhScore by remember { mutableStateOf(0) }
+    var thanhScore by remember { mutableStateOf(0) }
+    
+    // Auto-update simulated scores/states
+    LaunchedEffect(Unit) {
         while (true) {
-            delay((3500..6000).random().toLong())
-            minhScore++
-            // Occasional sticker from Minh
-            if (minhScore % 5 == 0) {
-                floatingStickers.add("🔥" to System.currentTimeMillis())
+            delay(1500)
+            if (room.exerciseType == ExerciseType.PLANK) {
+                minhScore += 1
+                thanhScore += if (Math.random() > 0.3) 1 else 0
+            } else {
+                minhScore += if (Math.random() > 0.4) 1 else 0
+                thanhScore += if (Math.random() > 0.5) 1 else 0
             }
         }
     }
 
-    LaunchedEffect(room.exerciseType) {
-        while (true) {
-            delay((4500..8000).random().toLong())
-            thanhScore++
-            // Occasional sticker from Thanh
-            if (thanhScore % 4 == 0) {
-                floatingStickers.add("👏" to System.currentTimeMillis())
-            }
-        }
-    }
-
-    // Plank duration timer
-    LaunchedEffect(squatStateStr, room.exerciseType) {
+    // Plank Timer increment
+    LaunchedEffect(squatStateStr) {
         if (room.exerciseType == ExerciseType.PLANK) {
             while (true) {
                 delay(1000)
@@ -105,23 +92,26 @@ fun RoomWorkoutHUD(
     // --- WebSocket Sync ---
     LaunchedEffect(room.id) {
         SocketManager.joinRoom(room.id, "@you_longnhat")
-        SocketManager.onRoomUpdateListener = { usersJsonStr ->
-            val usersList = mutableListOf<Triple<String, Int, String>>()
-            try {
-                val array = org.json.JSONArray(usersJsonStr)
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    val username = obj.optString("username")
-                    val reps = obj.optInt("reps")
-                    val state = obj.optString("state")
-                    if (username != "@you_longnhat") {
-                        usersList.add(Triple(username, reps, state))
+        
+        launch {
+            SocketManager.roomUpdates.collect { usersJsonStr ->
+                val usersList = mutableListOf<Triple<String, Int, String>>()
+                try {
+                    val array = org.json.JSONArray(usersJsonStr)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val username = obj.optString("username")
+                        val reps = obj.optInt("reps")
+                        val state = obj.optString("state")
+                        if (username != "@you_longnhat") {
+                            usersList.add(Triple(username, reps, state))
+                        }
                     }
+                } catch (e: Exception) {
+                    android.util.Log.e("RoomHUD", "Error parsing room users", e)
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("RoomHUD", "Error parsing room users", e)
+                roomUsers = usersList
             }
-            roomUsers = usersList
         }
     }
 

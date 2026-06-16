@@ -29,6 +29,7 @@ import com.example.aifittracker.net.SocketManager
 import com.example.aifittracker.db.FitDatabase
 import com.example.aifittracker.ui.theme.cyberpunkNeonBorder
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 @Composable
 fun LeaderboardScreen(
@@ -57,32 +58,35 @@ fun LeaderboardScreen(
         
         val submitName = "@$username"
         SocketManager.submitScore(submitName, score)
-        SocketManager.getLeaderboard()
         
-        SocketManager.onLeaderboardDataListener = { leaderboardJsonStr ->
-            try {
-                val array = org.json.JSONArray(leaderboardJsonStr)
-                val newList = mutableListOf<LeaderboardUser>()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    val u = obj.optString("username")
-                    val s = obj.optInt("score")
-                    val isMe = u == submitName
-                    val dispName = if (isMe) "You ($displayName)" else u
-                    newList.add(
-                        LeaderboardUser(
-                            rank = i + 1,
-                            name = dispName,
-                            score = "$s pts",
-                            isCurrentUser = isMe
+        launch {
+            SocketManager.leaderboardData.collect { leaderboardJsonStr ->
+                try {
+                    val array = org.json.JSONArray(leaderboardJsonStr)
+                    val newList = mutableListOf<LeaderboardUser>()
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val u = obj.optString("username")
+                        val s = obj.optInt("score")
+                        val isMe = u == submitName
+                        val dispName = if (isMe) "You ($displayName)" else u
+                        newList.add(
+                            LeaderboardUser(
+                                rank = i + 1,
+                                name = dispName,
+                                score = "$s pts",
+                                isCurrentUser = isMe
+                            )
                         )
-                    )
+                    }
+                    globalLeaderboard = newList
+                } catch (e: Exception) {
+                    android.util.Log.e("Leaderboard", "Error parsing leaderboard", e)
                 }
-                globalLeaderboard = newList
-            } catch (e: Exception) {
-                android.util.Log.e("Leaderboard", "Error parsing leaderboard", e)
             }
         }
+        
+        SocketManager.getLeaderboard()
     }
 
     val currentList = globalLeaderboard

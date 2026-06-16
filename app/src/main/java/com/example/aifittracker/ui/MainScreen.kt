@@ -105,12 +105,7 @@ fun MainScreen(
     )
 
     // WebSocket connection state
-    var isSocketConnected by remember { mutableStateOf(SocketManager.isConnected) }
-    LaunchedEffect(Unit) {
-        SocketManager.onConnectionStateChanged = { connected ->
-            isSocketConnected = connected
-        }
-    }
+    val isSocketConnected by SocketManager.connectionState.collectAsState()
     
     // Gym Room State
     var activeRoom by remember { mutableStateOf<WorkoutRoom?>(null) }

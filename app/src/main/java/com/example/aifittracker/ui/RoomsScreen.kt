@@ -27,6 +27,7 @@ import com.example.aifittracker.analysis.ExerciseType
 import com.example.aifittracker.model.WorkoutRoom
 import com.example.aifittracker.ui.theme.cyberpunkNeonBorder
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 import com.example.aifittracker.net.SocketManager
 
@@ -43,36 +44,38 @@ fun RoomsScreen(
     val roomsList = remember { mutableStateListOf<WorkoutRoom>() }
 
     LaunchedEffect(Unit) {
-        SocketManager.onRoomsListListener = { jsonStr ->
-            roomsList.clear()
-            try {
-                val array = org.json.JSONArray(jsonStr)
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    val id = obj.optString("id")
-                    val name = obj.optString("name")
-                    val hostName = obj.optString("hostName")
-                    val exerciseTypeName = obj.optString("exerciseType")
-                    val exerciseType = try {
-                        ExerciseType.valueOf(exerciseTypeName)
-                    } catch (e: Exception) {
-                        ExerciseType.SQUAT
-                    }
-                    val participantCount = obj.optInt("participantCount")
-                    val maxParticipantsVal = obj.optInt("maxParticipants")
-                    roomsList.add(
-                        WorkoutRoom(
-                            id = id,
-                            name = name,
-                            hostName = hostName,
-                            exerciseType = exerciseType,
-                            participantCount = participantCount,
-                            maxParticipants = maxParticipantsVal
+        launch {
+            SocketManager.roomsList.collect { jsonStr ->
+                roomsList.clear()
+                try {
+                    val array = org.json.JSONArray(jsonStr)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val id = obj.optString("id")
+                        val name = obj.optString("name")
+                        val hostName = obj.optString("hostName")
+                        val exerciseTypeName = obj.optString("exerciseType")
+                        val exerciseType = try {
+                            ExerciseType.valueOf(exerciseTypeName)
+                        } catch (e: Exception) {
+                            ExerciseType.SQUAT
+                        }
+                        val participantCount = obj.optInt("participantCount")
+                        val maxParticipantsVal = obj.optInt("maxParticipants")
+                        roomsList.add(
+                            WorkoutRoom(
+                                id = id,
+                                name = name,
+                                hostName = hostName,
+                                exerciseType = exerciseType,
+                                participantCount = participantCount,
+                                maxParticipants = maxParticipantsVal
+                            )
                         )
-                    )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("RoomsScreen", "Error parsing rooms list", e)
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("RoomsScreen", "Error parsing rooms list", e)
             }
         }
         SocketManager.getRooms()
