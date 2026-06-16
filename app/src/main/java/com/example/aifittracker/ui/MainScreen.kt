@@ -85,8 +85,8 @@ fun MainScreen(
     onThemeChanged: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val particles = remember { mutableStateListOf<HUDParticle>() }
-    var particleTrigger by remember { mutableStateOf(0) }
+    val particles = remember { mutableListOf<HUDParticle>() }
+    var drawTick by remember { mutableStateOf(0L) }
 
 
     // Animations for Cyberpunk Rep counter Ripple and Scale
@@ -179,18 +179,22 @@ fun MainScreen(
             
             // Animate particles
             val particleJob = launch {
-                for (step in 1..30) {
-                    delay(16)
-                    for (i in particles.indices) {
-                        val p = particles[i]
-                        p.x += p.vx
-                        p.y += p.vy
-                        p.alpha = kotlin.math.max(0f, p.alpha - 0.03f)
-                        p.size = kotlin.math.max(0f, p.size - 0.15f)
+                var step = 0
+                while (step < 30) {
+                    withFrameMillis { frameTime ->
+                        for (i in particles.indices) {
+                            val p = particles[i]
+                            p.x += p.vx
+                            p.y += p.vy
+                            p.alpha = kotlin.math.max(0f, p.alpha - 0.03f)
+                            p.size = kotlin.math.max(0f, p.size - 0.15f)
+                        }
+                        drawTick = frameTime
                     }
-                    particleTrigger++
+                    step++
                 }
                 particles.clear()
+                drawTick = System.currentTimeMillis()
             }
 
             val job1 = launch {
@@ -1144,7 +1148,7 @@ fun MainScreen(
                                 }
                                 
                                 // Draw explosion particles
-                                if (particleTrigger >= 0) {
+                                if (drawTick >= 0L) {
                                     particles.forEach { p ->
                                         if (p.alpha > 0f && p.size > 0f) {
                                             drawCircle(
